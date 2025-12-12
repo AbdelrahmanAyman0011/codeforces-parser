@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""
+cf - Cloudflare-proof Codeforces parser + tester + sol.cpp generator
+Supports:
+  ✔ parse <contest> <problem>
+  ✔ parse <contest>        # fetch all problems by looping A..Z
+  ✔ test sol.cpp
+"""
+
+import os, sys, argparse, subprocess, requests
+from bs4 import BeautifulSoup
+from difflib import unified_diff
+
+PROXY = "https://api.allorigins.win/raw?url="
+HEADERS = {
+    "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+TEMPLATE_CPP = r"""#include <bits/stdc++.h>
+using namespace std;
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+
+
+
+    return 0;
+}
+"""
+
+def fetch_problem(contest, problem):
+    """Fetch ONE problem samples."""
+    problem = problem.upper()
+    url = f"https://codeforces.com/contest/{contest}/problem/{problem}"
+    proxy_url = PROXY + url
+
+    print(f"\nFetching problem {problem}:")
+    print(proxy_url)
+
+    r = requests.get(proxy_url, headers=HEADERS)
+    if r.status_code != 200:
+        print(f"❌ Problem {problem}: HTTP {r.status_code}")
+        return False
+
+    soup = BeautifulSoup(r.text, "html.parser")
+    inputs = soup.find_all("div", class_="input")
+    outputs = soup.find_all("div", class_="output")
+
+    if not inputs or not outputs:
+        print(f"❌ No samples for {problem}")
+        return False
+
+    outdir = f"{contest}/{problem}"
+    os.makedirs(outdir, exist_ok=True)
+
+    for i, (inp, outp) in enumerate(zip(inputs, outputs)):
+        inp_text = inp.find("pre").get_text("\n")
+        out_text = outp.find("pre").get_text("\n")
+
+        open(f"{outdir}/in{i}.txt", "w").write(inp_text)
+        open(f"{outdir}/ans{i}.txt", "w").write(out_text)
+        print(f"✔ Sample {i}")
+
+    sol_path = os.path.join(outdir, "sol.cpp")
+    if not os.path.exists(sol_path):
+        open(sol_path, "w").write(TEMPLATE_CPP)
+        print("✔ Created sol.cpp")
+
+    print(f"✔ {problem} done.")
+    return True
+
+
+def fetch_contest(contest):
+    """Try problems A, B, C, ... until failures."""
+    print(f"📦 Fetching all problems for contest {contest}")
+
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    fails = 0
+
+    for ch in letters:
+        ok = fetch_problem(contest, ch)
+        if ok:
+            fails = 0
+        else:
+            fails += 1
+            if fails >= 4:
+                print("⛔ Stopping — no more problems.")
+                break
+
+
+def detect_run_cmd(source):
+    ext = os.path.splitext(source)[1]
+    if ext == ".cpp":
+        return (["g++", source, "-std=gnu++17", "-O2", "-o", "a.out"], ["./a.out"])
+    if ext == ".py":
+        return (None, ["python3", source])
+    return (None, [source])
+
+
+def find_samples_dir(start):
+    cur = os.path.abspath(start)
+    while True:
+        if os.path.exists(os.path.join(cur, "in0.txt")):
+            return cur
+        new = os.path.dirname(cur)
+        if new == cur:
+            return None
+        cur = new
+
+
+def show_diff(expected, got):
+    print("\n--- DIFF ---")
+    diff = unified_diff(
+        expected.splitlines(),
+        got.splitlines(),
+        fromfile="expected",
+        tofile="my_output",
+        lineterm=""
+    )
+    for line in diff:
+        print(line)
+
+
+def test_local(source):
+    build, run = detect_run_cmd(source)
+
+    if build:
+        print("🔨 Compiling...")
+        res = subprocess.run(build)
+        if res.returncode != 0:
+            print("❌ Compile error.")
+            return
+
+    sample_dir = find_samples_dir(os.getcwd())
+    if not sample_dir:
+        print("❌ No samples found.")
+        return
+
+    print(f"📂 Using sample folder: {sample_dir}")
+
+    i = 0
+    while True:
+        infile = os.path.join(sample_dir, f"in{i}.txt")
+        ansfile = os.path.join(sample_dir, f"ans{i}.txt")
+
+        if not os.path.exists(infile):
+            break
+
+        inp = open(infile).read()
+        expected = open(ansfile).read().strip()
+
+        print(f"\n--- Test {i} ---")
+
+        out = subprocess.run(run, input=inp.encode(),
+                             stdout=subprocess.PIPE).stdout.decode().strip()
+
+        if out == expected:
+            print("✔ OK")
+        else:
+            print("❌ WRONG")
+            print("\nExpected:")
+            print(expected)
+            print("\nMy output:")
+            print(out)
+            show_diff(expected, out)
+
+        i += 1
+
+    print("\n🧪 Testing finished.")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="cmd")
+
+    p = sub.add_parser("parse")
+    p.add_argument("contest")
+    p.add_argument("problem", nargs="?")
+
+    t = sub.add_parser("test")
+    t.add_argument("source")
+
+    args = parser.parse_args()
+
+    if args.cmd == "parse":
+        if args.problem:
+            fetch_problem(args.contest, args.problem)
+        else:
+            fetch_contest(args.contest)
+    elif args.cmd == "test":
+        test_local(args.source)
+    else:
+        print("Usage:")
+        print("  cf parse <contest> <problem>")
+        print("  cf parse <contest>   # fetch all problems A..Z")
+        print("  cf test sol.cpp")
+
+
+if __name__ == "__main__":
+    main()
+
