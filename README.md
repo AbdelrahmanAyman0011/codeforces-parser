@@ -6,7 +6,7 @@ A lightweight **Codeforces CLI tool** to:
 - generate a solution template (`sol.cpp`)  
 - test your solution with diffs  
 - parse entire contests (A → Z)  : u can Ctrl + c when problems completed [range not handled]
-- bypass Cloudflare automatically (<font color="red">****no login required****</font>)
+- bypass Cloudflare automatically (<font color="blue">****no login required****</font>)
 
 
 Perfect for competitive programming and fast problem-solving workflows.
@@ -165,6 +165,20 @@ This tool automatically uses a **safe HTML proxy** so parsing works anywhere wit
 - [ ] Problem statement downloader  
 - [ ] VS Code integration  
 - [ ] Online judge API mode  
+
+---
+
+## 🤝 Contributing
+
+Pull requests are welcome!  
+Issues, feature requests, and ideas are appreciated.
+
+---
+
+## 📜 License
+
+MIT License  
+Free to modify and distribute.
 
 ---
 
